@@ -1,13 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
 
 # Collect all submodules, data files, and binaries for packaged libraries
 mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
-onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all('onnxruntime')
+
+# Collect onnxruntime data/submodules/binaries separately to avoid native DLL
+# import crash during PyInstaller's binary dependency scan on Windows CI
+onnx_datas = collect_data_files('onnxruntime')
+onnx_hiddenimports = collect_submodules('onnxruntime')
+onnx_binaries = collect_dynamic_libs('onnxruntime')
 
 # Collect rembg data files and submodules separately to avoid onnx.reference crash
 rembg_datas = collect_data_files('rembg')

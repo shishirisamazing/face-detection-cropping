@@ -28,6 +28,11 @@ jobs:
           pip install click onnx sentencepiece filetype pooch
           pip install pyinstaller
 
+      - name: Add onnxruntime DLLs to PATH
+        run: |
+          $ortDir = python -c "import os, importlib.util; spec = importlib.util.find_spec('onnxruntime'); print(os.path.join(os.path.dirname(spec.origin), 'capi'))"
+          echo $ortDir >> $env:GITHUB_PATH
+
       - name: Build with PyInstaller
         run: pyinstaller run.spec
 
