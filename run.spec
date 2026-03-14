@@ -1,12 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
+import os
 
 block_cipher = None
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
-if sys.platform == 'darwin':
+if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
     icon_file = 'public/logo.icns'
-elif sys.platform == 'win32':
+elif sys.platform == 'win32' and os.path.exists('public/logo.ico'):
     icon_file = 'public/logo.ico'
 else:
     icon_file = 'public/logo.png'
