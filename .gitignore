@@ -1,0 +1,8 @@
+.vscode/
+__pycache__/
+*.pyc
+build/
+dist/
+inno_setup.iss
+logo.ico
+run_logo.spec
