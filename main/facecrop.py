@@ -25,11 +25,10 @@ except Exception as _rembg_err:
     print("Warning: rembg not available — background removal disabled ({}: {})".format(
         type(_rembg_err).__name__, _rembg_err))
 
-import cv2
-import numpy as np
-import mediapipe as mp
+cv2 = None
+np = None
+mp = None
 
-import pathlib
 from pathlib import Path
 import glob
 from PIL import Image, ImageOps
@@ -130,11 +129,29 @@ def _ensure_rembg_imported():
         return False
 
 
+def _ensure_vision_imports():
+    """Lazy-load heavy vision modules to speed up app startup."""
+    global cv2, np, mp
+
+    if cv2 is not None and np is not None and mp is not None:
+        return
+
+    import cv2 as _cv2
+    import numpy as _np
+    import mediapipe as _mp
+
+    cv2 = _cv2
+    np = _np
+    mp = _mp
+
+
 class FaceCrop():
 
     def __init__(self, height=0, width=0, height_asy=0, width_asy=0, tag='A', pyqt_ui=None, bg_color=None,
                  mode='percentage', aspect_ratio=(1, 1), padding_multiplier=2.5,
                  custom_width_px=600, custom_height_px=800):
+
+        _ensure_vision_imports()
 
         self.width = width
         self.width_asy = width_asy

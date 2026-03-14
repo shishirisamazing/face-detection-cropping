@@ -1504,9 +1504,14 @@ class Ui_MainWindow(object):
             json.dump(data, outfile)
 
 
-def main(app_language):
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
+def create_qt_app(argv=None):
+    if argv is None:
+        argv = sys.argv
+
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(argv)
+
     app.setStyleSheet(DARK_STYLESHEET)
 
     # Set application icon
@@ -1514,8 +1519,22 @@ def main(app_language):
     if os.path.exists(_logo_path):
         app.setWindowIcon(QtGui.QIcon(_logo_path))
 
-    MainWindow = QtWidgets.QMainWindow()
+    return app
+
+
+def create_main_window(app_language):
+    main_window = QtWidgets.QMainWindow()
     ui = Ui_MainWindow(app_language)
-    ui.setupUi(MainWindow)
-    MainWindow.show()
-    sys.exit(app.exec_())
+    ui.setupUi(main_window)
+    return main_window, ui
+
+
+def run_qt_app(app, main_window):
+    main_window.show()
+    return app.exec_()
+
+
+def main(app_language):
+    app = create_qt_app(sys.argv)
+    main_window, _ui = create_main_window(app_language)
+    sys.exit(run_qt_app(app, main_window))
