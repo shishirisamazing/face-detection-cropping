@@ -1,27 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 
-# Collect all submodules, data files, and binaries for packaged libraries
+# Collect all submodules, data files, and binaries for mediapipe (works fine)
 mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
 
-# Collect onnxruntime data/submodules/binaries separately to avoid native DLL
-# import crash during PyInstaller's binary dependency scan on Windows CI
-onnx_datas = collect_data_files('onnxruntime')
-onnx_hiddenimports = collect_submodules('onnxruntime')
+# Collect onnxruntime and rembg files (including .py sources) WITHOUT adding
+# them to the module graph.  PyInstaller's binary-dependency scanner imports
+# every collected package in an isolated child process; on Windows CI the
+# onnxruntime native DLL (onnxruntime_pybind11_state.pyd) crashes with an
+# access violation during that import.  By excluding these packages from
+# Analysis and shipping their raw source files + binaries as data, we sidestep
+# the child-process crash while keeping everything available at runtime.
+onnx_datas = collect_data_files('onnxruntime', include_py_files=True)
 onnx_binaries = collect_dynamic_libs('onnxruntime')
 
-# Collect rembg data files and submodules separately to avoid onnx.reference crash
-rembg_datas = collect_data_files('rembg')
-rembg_hiddenimports = collect_submodules('rembg')
+rembg_datas = collect_data_files('rembg', include_py_files=True)
+rembg_binaries = collect_dynamic_libs('rembg')
 
 all_datas = mp_datas + rembg_datas + onnx_datas
-all_binaries = mp_binaries + onnx_binaries
-all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
-                     + ['filetype', 'pooch'])
+all_binaries = mp_binaries + onnx_binaries + rembg_binaries
+# pymatting is a rembg dependency; since rembg is excluded from analysis its
+# dependency tree isn't traced, so we list it here explicitly.
+all_hiddenimports = (mp_hiddenimports
+                     + ['filetype', 'pooch', 'pymatting'])
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
@@ -42,7 +47,7 @@ a = Analysis(['run.py'],
              hiddenimports=all_hiddenimports,
              hookspath=[],
              runtime_hooks=[],
-             excludes=['onnx.reference'],
+             excludes=['onnx.reference', 'onnxruntime', 'rembg'],
              cipher=block_cipher,
              noarchive=False)
 pyz = PYZ(a.pure, a.zipped_data,
