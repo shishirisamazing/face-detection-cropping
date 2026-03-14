@@ -17,7 +17,7 @@ _orig_find_binary_deps = _build_main.find_binary_dependencies
 
 def _patched_find_binary_deps(binaries, collected_packages, *args, **kwargs):
     _skip = {'onnxruntime', 'rembg'}
-    filtered = [p for p in collected_packages if p not in _skip]
+    filtered = [p for p in collected_packages if p.split('.')[0] not in _skip]
     return _orig_find_binary_deps(binaries, filtered, *args, **kwargs)
 
 _build_main.find_binary_dependencies = _patched_find_binary_deps
