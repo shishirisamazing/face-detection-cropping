@@ -34,9 +34,27 @@ onnx_binaries = collect_dynamic_libs('onnxruntime')
 rembg_datas = collect_data_files('rembg')
 rembg_hiddenimports = collect_submodules('rembg')
 
+# collect_submodules('rembg') often fails to discover session submodules because
+# importing rembg triggers onnxruntime which crashes on Windows CI.  Explicitly
+# list the core rembg modules so they are always bundled.  new_session() relies
+# on BaseSession.__subclasses__(), which only works if the session modules have
+# actually been imported.
+_rembg_explicit = [
+    'rembg.bg',
+    'rembg.sessions',
+    'rembg.sessions.base',
+    'rembg.sessions.isnet_general_use',
+    'rembg.sessions.u2net',
+    'rembg.sessions.u2netp',
+    'rembg.sessions.u2net_human_seg',
+    'rembg.sessions.u2net_cloth_seg',
+    'rembg.sessions.silueta',
+]
+
 all_datas = mp_datas + rembg_datas + onnx_datas
 all_binaries = mp_binaries + onnx_binaries
 all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
+                     + _rembg_explicit
                      + ['filetype', 'pooch', 'pymatting', 'scipy'])
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
@@ -57,7 +75,7 @@ a = Analysis(['run.py'],
              ] + all_datas,
              hiddenimports=all_hiddenimports,
              hookspath=[],
-             runtime_hooks=[],
+             runtime_hooks=['rthook_onnxruntime.py'],
              excludes=['onnx.reference'],
              cipher=block_cipher,
              noarchive=False)
