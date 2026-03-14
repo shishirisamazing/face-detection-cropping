@@ -1,6 +1,7 @@
 #author: Tomo Lapautre
 
 import os
+import sys
 import warnings
 
 # Suppress noisy warnings before importing heavy libraries
@@ -11,11 +12,16 @@ os.environ.setdefault('GLOG_minloglevel', '2')               # MediaPipe: suppre
 warnings.filterwarnings('ignore', message='.*Cholesky.*', category=UserWarning)
 
 # Import rembg before cv2/mediapipe to avoid onnxruntime conflicts
+remove = None
+new_session = None
+_REMBG_IMPORT_ERROR = None
+
 try:
     from rembg import remove, new_session
     _REMBG_AVAILABLE = True
-except (ImportError, SystemExit) as _rembg_err:
+except Exception as _rembg_err:
     _REMBG_AVAILABLE = False
+    _REMBG_IMPORT_ERROR = _rembg_err
     print("Warning: rembg not available — background removal disabled ({}: {})".format(
         type(_rembg_err).__name__, _rembg_err))
 
@@ -37,6 +43,91 @@ from main.constants import (
 # Resolve model paths relative to this file
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _FACE_MODEL_PATH = os.path.join(_THIS_DIR, 'blaze_face_short_range.tflite')
+
+
+def _add_runtime_dll_paths():
+    """Add likely onnxruntime DLL locations for frozen and non-frozen runs."""
+    _roots = []
+
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            _roots.append(sys._MEIPASS)
+        _exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        _roots.extend([_exe_dir, os.path.join(_exe_dir, '_internal')])
+    else:
+        _roots.append(os.path.dirname(os.path.abspath(__file__)))
+
+    _seen = set()
+    for _root in _roots:
+        if not _root or not os.path.isdir(_root):
+            continue
+
+        for _dll_dir in (_root, os.path.join(_root, 'onnxruntime', 'capi')):
+            if not os.path.isdir(_dll_dir):
+                continue
+
+            _key = os.path.normcase(os.path.abspath(_dll_dir))
+            if _key in _seen:
+                continue
+            _seen.add(_key)
+
+            if sys.platform == 'win32' and hasattr(os, 'add_dll_directory'):
+                try:
+                    os.add_dll_directory(_dll_dir)
+                except OSError:
+                    pass
+
+            os.environ['PATH'] = _dll_dir + os.pathsep + os.environ.get('PATH', '')
+
+
+def _configure_u2net_home():
+    """Point U2NET_HOME to a bundled model directory when available."""
+    if os.getenv('U2NET_HOME'):
+        return
+
+    _roots = []
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            _roots.append(sys._MEIPASS)
+
+        _exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        _roots.extend([os.path.join(_exe_dir, '_internal'), _exe_dir])
+    else:
+        _project_root = os.path.normpath(os.path.join(_THIS_DIR, '..'))
+        _roots.append(_project_root)
+
+    for _root in _roots:
+        if not _root:
+            continue
+
+        _u2net_dir = os.path.join(_root, '.u2net')
+        _model_path = os.path.join(_u2net_dir, 'isnet-general-use.onnx')
+
+        if os.path.isfile(_model_path):
+            os.environ['U2NET_HOME'] = _u2net_dir
+            return
+
+
+def _ensure_rembg_imported():
+    """Try importing rembg again after preparing DLL search paths."""
+    global remove, new_session, _REMBG_AVAILABLE, _REMBG_IMPORT_ERROR
+
+    if _REMBG_AVAILABLE:
+        return True
+
+    _add_runtime_dll_paths()
+    _configure_u2net_home()
+
+    try:
+        from rembg import remove as _remove, new_session as _new_session
+        remove = _remove
+        new_session = _new_session
+        _REMBG_AVAILABLE = True
+        _REMBG_IMPORT_ERROR = None
+        return True
+    except Exception as _rembg_err:
+        _REMBG_IMPORT_ERROR = _rembg_err
+        return False
 
 
 class FaceCrop():
@@ -73,9 +164,26 @@ class FaceCrop():
 
         # Initialize rembg session for background removal if enabled
         self._rembg_session = None
-        if self.bg_color is not None and _REMBG_AVAILABLE:
-            self._rembg_session = new_session("isnet-general-use",
-                                              providers=["CPUExecutionProvider"])
+
+        if self.bg_color is not None:
+            _configure_u2net_home()
+
+            if not (_REMBG_AVAILABLE or _ensure_rembg_imported()):
+                _err = _REMBG_IMPORT_ERROR
+                raise RuntimeError("rembg import failed ({}: {})".format(
+                    type(_err).__name__ if _err is not None else 'UnknownError',
+                    _err if _err is not None else 'unknown reason'
+                ))
+
+            try:
+                self._rembg_session = new_session(
+                    "isnet-general-use",
+                    providers=["CPUExecutionProvider"]
+                )
+            except Exception as _session_err:
+                raise RuntimeError("Failed to initialize rembg session ({}: {})".format(
+                    type(_session_err).__name__, _session_err
+                )) from _session_err
 
 
     def _compute_crop_px(self, img_width, img_height, face_w=None, face_h=None):
@@ -96,7 +204,6 @@ class FaceCrop():
         else:
             raise ValueError("Unknown crop mode: {}".format(self.mode))
         return width_px, height_px
-
 
     #finds the face and saves the cropped face in your output directory
     def crop_save(self, input_directory, output_path, bool_folder=False, bool_face_count=False, preview=False, excluded_files=None):
@@ -211,7 +318,7 @@ class FaceCrop():
                 cropped_face = Image.fromarray(face)
 
                 #replace background with solid color if enabled
-                if self.bg_color is not None and self._rembg_session is not None:
+                if self.bg_color is not None:
                     cropped_face = self._replace_background(face)
 
                 #only looks for the first face it can find if in preview mode
@@ -322,16 +429,15 @@ class FaceCrop():
 
         cropped_face = Image.fromarray(face)
 
-        if self.bg_color is not None and self._rembg_session is not None:
+        if self.bg_color is not None:
             cropped_face = self._replace_background(face)
 
         return cropped_face
 
     def _replace_background(self, face_array):
-        """Replace background with solid color using rembg (IS-Net model).
+        """Replace background with solid color.
 
-        rembg produces a high-quality alpha matte that handles fine hair detail,
-        semi-transparent edges, and complex boundaries naturally.
+        This function requires rembg; no non-rembg fallback is used.
         """
         # Ensure 3-channel RGB
         if face_array.shape[2] == 4:
@@ -339,18 +445,26 @@ class FaceCrop():
         else:
             rgb_face = face_array
 
+        if self._rembg_session is None or not _REMBG_AVAILABLE or remove is None:
+            raise RuntimeError("rembg session is not initialized")
+
         # Convert to PIL for rembg
         pil_input = Image.fromarray(rgb_face)
 
-        # rembg returns RGBA image with alpha channel as the matte
-        pil_rgba = remove(
-            pil_input,
-            session=self._rembg_session,
-            alpha_matting=True,
-            alpha_matting_foreground_threshold=240,
-            alpha_matting_background_threshold=10,
-            alpha_matting_erode_size=10,
-        )
+        try:
+            # rembg returns RGBA image with alpha channel as the matte
+            pil_rgba = remove(
+                pil_input,
+                session=self._rembg_session,
+                alpha_matting=True,
+                alpha_matting_foreground_threshold=240,
+                alpha_matting_background_threshold=10,
+                alpha_matting_erode_size=10,
+            )
+        except Exception as _rembg_err:
+            raise RuntimeError("rembg background removal failed ({}: {})".format(
+                type(_rembg_err).__name__, _rembg_err
+            )) from _rembg_err
 
         rgba_array = np.array(pil_rgba)
         alpha = rgba_array[:, :, 3].astype(np.float32) / 255.0

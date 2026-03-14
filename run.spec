@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
+import importlib.util as _importlib_util
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
@@ -16,7 +17,7 @@ import PyInstaller.building.build_main as _build_main
 _orig_find_binary_deps = _build_main.find_binary_dependencies
 
 def _patched_find_binary_deps(binaries, collected_packages, *args, **kwargs):
-    _skip = {'onnxruntime', 'rembg'}
+    _skip = {'onnxruntime', 'rembg', 'torch', 'sklearn', 'skimage'}
     filtered = [p for p in collected_packages if p.split('.')[0] not in _skip]
     return _orig_find_binary_deps(binaries, filtered, *args, **kwargs)
 
@@ -34,6 +35,16 @@ onnx_binaries = collect_dynamic_libs('onnxruntime')
 rembg_datas = collect_data_files('rembg')
 rembg_hiddenimports = collect_submodules('rembg')
 
+_u2net_model_name = 'isnet-general-use.onnx'
+_u2net_model_source = os.path.join(os.path.expanduser('~'), '.u2net', _u2net_model_name)
+_u2net_datas = []
+if os.path.exists(_u2net_model_source):
+    _u2net_datas.append((_u2net_model_source, '.u2net'))
+else:
+    print("WARNING: {} not found at {}. rembg may require runtime download.".format(
+        _u2net_model_name, _u2net_model_source
+    ))
+
 # collect_submodules('rembg') often fails to discover session submodules because
 # importing rembg triggers onnxruntime which crashes on Windows CI.  Explicitly
 # list the core rembg modules so they are always bundled.  new_session() relies
@@ -45,6 +56,7 @@ _rembg_explicit = [
     'rembg.sessions',
     'rembg.sessions.base',
     'rembg.sessions.dis_general_use',
+    'rembg.sessions.dis_anime',
     'rembg.sessions.u2net',
     'rembg.sessions.u2netp',
     'rembg.sessions.u2net_human_seg',
@@ -52,8 +64,17 @@ _rembg_explicit = [
     'rembg.sessions.silueta',
 ]
 
-# Collect scikit-image (skimage) — required by rembg.bg for morphological ops
-skimage_datas, skimage_binaries, skimage_hiddenimports = collect_all('skimage')
+# rembg renamed some session modules across versions; include whichever exists.
+for _maybe_session in ('rembg.sessions.isnet_general_use', 'rembg.sessions.isnet_anime'):
+    if _importlib_util.find_spec(_maybe_session) is not None:
+        _rembg_explicit.append(_maybe_session)
+
+# Collect scikit-image (skimage) — required by rembg.bg for morphological ops.
+# Use targeted collection instead of collect_all to avoid pulling in torch
+# (skimage has optional torch compatibility that causes DLL access violations).
+skimage_datas = collect_data_files('skimage')
+skimage_hiddenimports = collect_submodules('skimage')
+skimage_binaries = collect_dynamic_libs('skimage')
 
 all_datas = mp_datas + rembg_datas + onnx_datas + skimage_datas
 all_binaries = mp_binaries + onnx_binaries + skimage_binaries
@@ -61,6 +82,32 @@ all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
                      + skimage_hiddenimports + _rembg_explicit
                      + ['filetype', 'pooch', 'pymatting', 'scipy',
                         'tqdm', 'jsonschema'])
+
+if sys.platform == 'win32':
+    _vc_runtime_names = {
+        'msvcp140.dll',
+        'msvcp140_1.dll',
+        'vcruntime140.dll',
+        'vcruntime140_1.dll',
+    }
+
+    # Remove bundled VC runtime DLLs collected from various packages so we can
+    # inject a single consistent runtime version from System32.
+    all_binaries = [
+        _bin for _bin in all_binaries
+        if os.path.basename(_bin[0]).lower() not in _vc_runtime_names
+    ]
+
+    _system32 = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'System32')
+    _qt_bin_dest = os.path.join('PyQt5', 'Qt5', 'bin')
+    for _name in sorted(_vc_runtime_names):
+        _src = os.path.join(_system32, _name)
+        if os.path.exists(_src):
+            # Keep copies in app root and Qt bin for stable DLL resolution.
+            all_binaries.append((_src, '.'))
+            all_binaries.append((_src, _qt_bin_dest))
+        else:
+            print("WARNING: {} not found in {}".format(_name, _system32))
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
@@ -77,11 +124,12 @@ a = Analysis(['run.py'],
                  ('main/parameters.json', 'main'),
                  ('main/blaze_face_short_range.tflite', 'main'),
                  ('public/logo.png', 'public'),
-             ] + all_datas,
+             ] + _u2net_datas + all_datas,
              hiddenimports=all_hiddenimports,
              hookspath=[],
              runtime_hooks=['rthook_onnxruntime.py'],
-             excludes=['onnx.reference'],
+             excludes=['onnx.reference', 'torch', 'torchvision', 'torchaudio',
+                       'tensorflow', 'tensorboard'],
              cipher=block_cipher,
              noarchive=False)
 pyz = PYZ(a.pure, a.zipped_data,
