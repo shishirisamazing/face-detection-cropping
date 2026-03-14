@@ -14,8 +14,10 @@ warnings.filterwarnings('ignore', message='.*Cholesky.*', category=UserWarning)
 try:
     from rembg import remove, new_session
     _REMBG_AVAILABLE = True
-except (ImportError, SystemExit):
+except (ImportError, SystemExit) as _rembg_err:
     _REMBG_AVAILABLE = False
+    print("Warning: rembg not available — background removal disabled ({}: {})".format(
+        type(_rembg_err).__name__, _rembg_err))
 
 import cv2
 import numpy as np

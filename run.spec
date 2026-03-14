@@ -41,9 +41,10 @@ rembg_hiddenimports = collect_submodules('rembg')
 # actually been imported.
 _rembg_explicit = [
     'rembg.bg',
+    'rembg.session_factory',
     'rembg.sessions',
     'rembg.sessions.base',
-    'rembg.sessions.isnet_general_use',
+    'rembg.sessions.dis_general_use',
     'rembg.sessions.u2net',
     'rembg.sessions.u2netp',
     'rembg.sessions.u2net_human_seg',
@@ -51,11 +52,15 @@ _rembg_explicit = [
     'rembg.sessions.silueta',
 ]
 
-all_datas = mp_datas + rembg_datas + onnx_datas
-all_binaries = mp_binaries + onnx_binaries
+# Collect scikit-image (skimage) — required by rembg.bg for morphological ops
+skimage_datas, skimage_binaries, skimage_hiddenimports = collect_all('skimage')
+
+all_datas = mp_datas + rembg_datas + onnx_datas + skimage_datas
+all_binaries = mp_binaries + onnx_binaries + skimage_binaries
 all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
-                     + _rembg_explicit
-                     + ['filetype', 'pooch', 'pymatting', 'scipy'])
+                     + skimage_hiddenimports + _rembg_explicit
+                     + ['filetype', 'pooch', 'pymatting', 'scipy',
+                        'tqdm', 'jsonschema'])
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
