@@ -4,6 +4,6 @@ mediapipe>=0.10
 Pillow>=9.0
 numpy>=1.21
 
-# Optional: background removal support
-# rembg>=2.0
-# onnxruntime>=1.14
+# Background removal support
+rembg>=2.0
+onnxruntime>=1.14

@@ -5,8 +5,14 @@ from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 
-# Collect all mediapipe submodules, data files, and binaries
+# Collect all submodules, data files, and binaries for packaged libraries
 mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
+rembg_datas, rembg_binaries, rembg_hiddenimports = collect_all('rembg')
+onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all('onnxruntime')
+
+all_datas = mp_datas + rembg_datas + onnx_datas
+all_binaries = mp_binaries + rembg_binaries + onnx_binaries
+all_hiddenimports = mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
@@ -18,13 +24,13 @@ else:
 
 a = Analysis(['run.py'],
              pathex=['.'],
-             binaries=mp_binaries,
+             binaries=all_binaries,
              datas=[
                  ('main/parameters.json', 'main'),
                  ('main/blaze_face_short_range.tflite', 'main'),
                  ('public/logo.png', 'public'),
-             ] + mp_datas,
-             hiddenimports=mp_hiddenimports,
+             ] + all_datas,
+             hiddenimports=all_hiddenimports,
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
