@@ -16,9 +16,9 @@ import PyInstaller.building.build_main as _build_main
 _orig_find_binary_deps = _build_main.find_binary_dependencies
 
 def _patched_find_binary_deps(binaries, collected_packages, *args, **kwargs):
-    return _orig_find_binary_deps(
-        binaries, collected_packages - {'onnxruntime', 'rembg'}, *args, **kwargs
-    )
+    _skip = {'onnxruntime', 'rembg'}
+    filtered = [p for p in collected_packages if p not in _skip]
+    return _orig_find_binary_deps(binaries, filtered, *args, **kwargs)
 
 _build_main.find_binary_dependencies = _patched_find_binary_deps
 # --------------------------------------------------------------------------
