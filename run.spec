@@ -1,18 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
 
 # Collect all submodules, data files, and binaries for packaged libraries
 mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
-rembg_datas, rembg_binaries, rembg_hiddenimports = collect_all('rembg')
 onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all('onnxruntime')
 
+# Collect rembg data files and submodules separately to avoid onnx.reference crash
+rembg_datas = collect_data_files('rembg')
+rembg_hiddenimports = collect_submodules('rembg')
+
 all_datas = mp_datas + rembg_datas + onnx_datas
-all_binaries = mp_binaries + rembg_binaries + onnx_binaries
-all_hiddenimports = mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
+all_binaries = mp_binaries + onnx_binaries
+all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
+                     + ['filetype', 'pooch'])
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
@@ -33,7 +37,7 @@ a = Analysis(['run.py'],
              hiddenimports=all_hiddenimports,
              hookspath=[],
              runtime_hooks=[],
-             excludes=[],
+             excludes=['onnx.reference'],
              cipher=block_cipher,
              noarchive=False)
 pyz = PYZ(a.pure, a.zipped_data,
