@@ -7,3 +7,4 @@ numpy>=1.21
 # Background removal support
 rembg>=2.0
 onnxruntime>=1.14
+pymatting>=1.1
