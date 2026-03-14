@@ -18,14 +18,29 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Visual C++ Redistributable
+        run: choco install vcredist140 -y
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install click onnx sentencepiece
           pip install pyinstaller
 
       - name: Build with PyInstaller
         run: pyinstaller run.spec
+
+      - name: Sign Windows executable
+        if: env.WINDOWS_CERT_BASE64 != ''
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          echo "$WINDOWS_CERT_BASE64" | base64 -d > cert.pfx
+          signtool sign /f cert.pfx /p "$WINDOWS_CERT_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist/FaceCrop/FaceCrop.exe
+          rm cert.pfx
+        shell: bash
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
@@ -51,6 +66,48 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller run.spec
+
+      - name: Sign and notarize macOS app
+        if: env.MACOS_CERT_BASE64 != ''
+        env:
+          MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Import certificate into a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$MACOS_CERT_BASE64" | base64 -d > cert.p12
+          security import cert.p12 -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm cert.p12
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # Find signing identity
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | grep -o '".*"' | tr -d '"')
+
+          # Sign all binaries in the dist folder
+          find dist/FaceCrop -type f \( -name "*.so" -o -name "*.dylib" -o -name "FaceCrop" \) -exec codesign --force --sign "$IDENTITY" --timestamp {} \;
+
+          # Create a zip for notarization
+          ditto -c -k --keepParent dist/FaceCrop dist/FaceCrop.zip
+
+          # Submit for notarization
+          xcrun notarytool submit dist/FaceCrop.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          rm dist/FaceCrop.zip
+
+          # Clean up keychain
+          security delete-keychain "$KEYCHAIN_PATH"
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v4
