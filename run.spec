@@ -1,8 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
+
+# Collect all mediapipe submodules, data files, and binaries
+mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
 
 # Use .icns on macOS, .ico on Windows, .png as fallback
 if sys.platform == 'darwin' and os.path.exists('public/logo.icns'):
@@ -14,13 +18,13 @@ else:
 
 a = Analysis(['run.py'],
              pathex=['.'],
-             binaries=[],
+             binaries=mp_binaries,
              datas=[
                  ('main/parameters.json', 'main'),
                  ('main/blaze_face_short_range.tflite', 'main'),
                  ('public/logo.png', 'public'),
-             ],
-             hiddenimports=['mediapipe'],
+             ] + mp_datas,
+             hiddenimports=mp_hiddenimports,
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
