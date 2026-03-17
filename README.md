@@ -39,7 +39,7 @@ cd face-detection-cropping
 pip install -r requirements.txt
 
 # (Optional) Install background removal support
-pip install rembg onnxruntime
+pip install rembg onnxruntime pymatting
 ```
 
 ## Usage

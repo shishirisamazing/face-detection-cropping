@@ -2,7 +2,7 @@
 import sys
 import os
 import importlib.util as _importlib_util
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs, copy_metadata
 
 block_cipher = None
 
@@ -34,6 +34,13 @@ onnx_binaries = collect_dynamic_libs('onnxruntime')
 
 rembg_datas = collect_data_files('rembg')
 rembg_hiddenimports = collect_submodules('rembg')
+
+metadata_datas = []
+for _metadata_pkg in ('pymatting', 'rembg', 'onnxruntime'):
+    try:
+        metadata_datas += copy_metadata(_metadata_pkg)
+    except Exception:
+        pass
 
 _u2net_model_name = 'isnet-general-use.onnx'
 _u2net_model_source = os.path.join(os.path.expanduser('~'), '.u2net', _u2net_model_name)
@@ -76,7 +83,7 @@ skimage_datas = collect_data_files('skimage')
 skimage_hiddenimports = collect_submodules('skimage')
 skimage_binaries = collect_dynamic_libs('skimage')
 
-all_datas = mp_datas + rembg_datas + onnx_datas + skimage_datas
+all_datas = mp_datas + rembg_datas + onnx_datas + skimage_datas + metadata_datas
 all_binaries = mp_binaries + onnx_binaries + skimage_binaries
 all_hiddenimports = (mp_hiddenimports + rembg_hiddenimports + onnx_hiddenimports
                      + skimage_hiddenimports + _rembg_explicit

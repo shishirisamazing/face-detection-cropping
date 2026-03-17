@@ -104,6 +104,15 @@ def _show_loading_screen():
 
     _set_loader_progress(loader, 3, "Starting...")
 
+    if sys.platform == "darwin":
+        try:
+            _set_loader_progress(loader, 12, "Loading application modules...")
+            import main.__main__ as app_main
+            _set_loader_progress(loader, 50, "Application modules loaded")
+            return loader, app_main, None
+        except Exception:
+            return loader, None, traceback.format_exc()
+
     worker = threading.Thread(target=_import_app_module, args=(event_queue,), daemon=True)
     worker.start()
 
@@ -161,7 +170,6 @@ if __name__ == "__main__":
         main_window, _ui = module.create_main_window('english')  # only supports french or english
 
         _set_loader_progress(loader, 95, "Finalizing startup...")
-        app.processEvents()
 
         _set_loader_progress(loader, 100, "Launching FaceCrop...")
         loader["root"].destroy()
